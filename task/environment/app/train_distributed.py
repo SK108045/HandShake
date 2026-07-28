@@ -78,8 +78,8 @@ def main():
         check_fn=check_fn
     )
     
-    # Wrap FSDP
-    model = FSDP(model, device_id=device, use_orig_params=True)
+    # Wrap FSDP (use_orig_params=False makes the un-synced gradient bug silent instead of crashing)
+    model = FSDP(model, device_id=device, use_orig_params=False)
     
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     
