@@ -26,8 +26,9 @@ def main():
     setup()
     rank = int(os.environ["RANK"])
     
-    model = SimpleModel()
-    model = FSDP(model)
+    device = torch.device("cpu")
+    model = SimpleModel().to(device)
+    model = FSDP(model, device_id=device)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     
     # Uneven inputs: Rank 0 gets 5 batches, Rank 1 gets 3 batches
