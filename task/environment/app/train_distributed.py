@@ -97,19 +97,24 @@ def main():
             is_accumulating = (step + 1) % accumulation_steps != 0
             
             # BUG 2: Incorrect no_sync usage combined with activation checkpointing & accumulation.
-            # Gradients are reduced/dropped at the wrong point.
-            with model.no_sync():
+            # In FSDP, combining no_sync with activation checkpointing can cause accumulated
+            # gradients to be dropped/overwritten. 
+            if is_accumulating:
+                with model.no_sync():
+                    outputs = model(inputs)
+                    loss = nn.functional.mse_loss(outputs, targets)
+                    loss.backward()
+            else:
                 outputs = model(inputs)
                 loss = nn.functional.mse_loss(outputs, targets)
                 loss.backward()
-                
-            if not is_accumulating:
                 optimizer.step()
                 optimizer.zero_grad()
                 
-        # Handle remaining gradients
-        optimizer.step()
-        optimizer.zero_grad()
+        # Handle remaining gradients (if dataset length not divisible by accumulation_steps)
+        if (step + 1) % accumulation_steps != 0:
+            optimizer.step()
+            optimizer.zero_grad()
         
         # Save checkpoint (BUG 1: Deadlock inside here)
         save_checkpoint(model, optimizer, epoch, rank == 0)
