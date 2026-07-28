@@ -25,7 +25,7 @@ class SimpleModel(nn.Module):
         for _ in range(num_layers):
             layers.extend([nn.Linear(in_dim, hidden_dim), nn.ReLU()])
             in_dim = hidden_dim
-        layers.append(nn.Linear(hidden_dim, 1))
+        layers.append(nn.Linear(hidden_dim, 2))
         self.net = nn.Sequential(*layers)
         
     def forward(self, x):
@@ -34,7 +34,7 @@ class SimpleModel(nn.Module):
 class DummyDataset(Dataset):
     def __init__(self, size=100):
         self.data = torch.randn(size, 10)
-        self.targets = torch.randn(size, 1)
+        self.targets = torch.randn(size, 2)
     def __len__(self): return len(self.data)
     def __getitem__(self, idx): return self.data[idx], self.targets[idx]
 
