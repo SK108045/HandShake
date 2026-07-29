@@ -45,7 +45,7 @@ def get_peak_rss_mb():
 def main():
     # Fixed seeds
     torch.manual_seed(42)
-    # torch.use_deterministic_algorithms(True)
+    torch.use_deterministic_algorithms(True, warn_only=True)
     
     setup()
     rank = int(os.environ["RANK"])
@@ -78,8 +78,8 @@ def main():
         check_fn=check_fn
     )
     
-    # Wrap FSDP (use_orig_params=False makes the un-synced gradient bug silent instead of crashing)
-    model = FSDP(model, device_id=device, use_orig_params=False)
+    # Wrap FSDP
+    model = FSDP(model, device_id=device, use_orig_params=True)
     
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     
@@ -95,19 +95,19 @@ def main():
             total_samples += inputs.size(0)
             
             # BUG 2: Incorrect no_sync usage combined with activation checkpointing & accumulation.
-            # In FSDP, combining no_sync with activation checkpointing can cause accumulated
-            # gradients to be dropped/overwritten.
+            # Forward is outside no_sync, backward is inside. With activation checkpointing, 
+            # the recomputed forward pass during backward() runs under a different sync context,
+            # which silently drops or corrupts accumulated gradients.
             is_last_batch = (step + 1) == len(dataloader)
             is_accumulating = (step + 1) % accumulation_steps != 0 and not is_last_batch
             
+            outputs = model(inputs)
+            loss = nn.functional.mse_loss(outputs, targets)
+            
             if is_accumulating:
                 with model.no_sync():
-                    outputs = model(inputs)
-                    loss = nn.functional.mse_loss(outputs, targets)
                     loss.backward()
             else:
-                outputs = model(inputs)
-                loss = nn.functional.mse_loss(outputs, targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
