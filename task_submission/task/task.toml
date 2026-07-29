@@ -1,0 +1,32 @@
+artifacts = ["/app/checkpoints/checkpoint_epoch_1.pt", "/app/rank_0_samples.txt", "/app/rank_1_samples.txt"]
+
+[task]
+name = "dynamo/fsdp-straggler-deadlock"
+description = "Fix 3 interconnected PyTorch FSDP bugs (checkpoint deadlock, loss divergence, and straggler rank collective deadlock) in a multi-gpu environment."
+
+[metadata]
+category = "Model Training and ML Infrastructure"
+subcategory = "Distributed training"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["debug", "implement"]
+artifact_type = ["codebase"]
+expert_time_estimate_hours = 2
+difficulty_explanation = "The bugs form a cascading reveal: fixing the straggler deadlock allows the epoch to finish, revealing the checkpoint deadlock. Fixing the checkpoint deadlock allows the loss to diverge, requiring a deep understanding of PyTorch FSDP's no_sync context manager and how gradients are accumulated."
+solution_explanation = "Implement a shadow collective loop using dist.all_reduce(ReduceOp.MAX) to find the global max batches, then pad shorter ranks with zeroed dummy forwards that don't affect gradients. Move dist.barrier() and model.state_dict() outside the rank 0 check to prevent checkpoint deadlock. Add missing loss.backward() in the no_sync block to fix gradient accumulation divergence."
+verification_explanation = "Verifies the exact sample counts (110 and 90) were processed to ensure the straggler fix was genuine and not just padded data. Verifies the output state dict against a baseline state dict with 1e-6 float tolerance to ensure gradient mathematics are identically correct."
+
+[verifier]
+timeout_sec = 60.0
+
+[agent]
+timeout_sec = 900.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240                 # increase for tasks with large files or build artifacts
+gpus = 0                           # max 1, expect H100
+allow_internet = true              # open internet is available to the agent
+mcp_servers = []                   # optional MCP servers to expose to the agent
