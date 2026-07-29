@@ -39,11 +39,9 @@ class DummyDataset(Dataset):
     def __getitem__(self, idx): return self.data[idx], self.targets[idx]
 
 def get_peak_rss_mb():
-    # Track peak RSS in MB
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 def main():
-    # Fixed seeds
     torch.manual_seed(42)
     torch.use_deterministic_algorithms(True, warn_only=True)
     
@@ -52,14 +50,10 @@ def main():
     world_size = int(os.environ["WORLD_SIZE"])
     device = torch.device("cpu")
     
-    # Record world size for the verifier
     if rank == 0:
         with open("world_size.log", "w") as f:
             f.write(str(world_size))
             
-    # Manually split dataset unevenly.
-    # Do NOT use DistributedSampler's drop_last=False padding anywhere.
-    # The uneven per-rank data split requires structural handling.
     full_dataset = DummyDataset(100)
     if rank == 0:
         my_data = Subset(full_dataset, range(0, 55))
@@ -70,7 +64,6 @@ def main():
     
     model = SimpleModel().to(device)
     
-    # Apply activation checkpointing
     check_fn = lambda submodule: isinstance(submodule, nn.Linear)
     apply_activation_checkpointing(
         model,
@@ -78,46 +71,56 @@ def main():
         check_fn=check_fn
     )
     
-    # Wrap FSDP
     model = FSDP(model, device_id=device, use_orig_params=True)
-    
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     
     accumulation_steps = 2
-    
     epochs = 2
     total_samples = 0
     
+    # FIX 3 (Straggler Deadlock): Find max batches across all ranks for shadow loop
+    max_batches = torch.tensor([len(dataloader)], dtype=torch.long, device=device)
+    dist.all_reduce(max_batches, op=dist.ReduceOp.MAX)
+    max_batches = max_batches.item()
+    
     for epoch in range(epochs):
         model.train()
-        for step, (inputs, targets) in enumerate(dataloader):
-            inputs, targets = inputs.to(device), targets.to(device)
-            total_samples += inputs.size(0)
-            
-            # BUG 2: Incorrect no_sync usage combined with activation checkpointing & accumulation.
-            # Forward is outside no_sync, backward is inside. With activation checkpointing, 
-            # the recomputed forward pass during backward() runs under a different sync context,
-            # which silently drops or corrupts accumulated gradients.
-            is_last_batch = (step + 1) == len(dataloader)
+        dataloader_iter = iter(dataloader)
+        
+        for step in range(max_batches):
+            is_active = True
+            try:
+                inputs, targets = next(dataloader_iter)
+                inputs, targets = inputs.to(device), targets.to(device)
+                total_samples += inputs.size(0)
+            except StopIteration:
+                # Shadow collective for Straggler Rank
+                is_active = False
+                inputs = torch.zeros(5, 10, device=device)
+                targets = torch.zeros(5, 2, device=device)
+                
+            is_last_batch = (step + 1) == max_batches
             is_accumulating = (step + 1) % accumulation_steps != 0 and not is_last_batch
             
-            outputs = model(inputs)
-            loss = nn.functional.mse_loss(outputs, targets)
-            
+            # FIX 2 (Loss Divergence): Correct no_sync usage (forward AND backward inside context)
             if is_accumulating:
                 with model.no_sync():
+                    outputs = model(inputs)
+                    loss = nn.functional.mse_loss(outputs, targets)
+                    if not is_active: loss = loss * 0.0 # Don't contribute false gradients
                     loss.backward()
             else:
+                outputs = model(inputs)
+                loss = nn.functional.mse_loss(outputs, targets)
+                if not is_active: loss = loss * 0.0
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
                 
-        # Save checkpoint (BUG 1: Deadlock inside here)
         save_checkpoint(model, optimizer, epoch, rank == 0)
         
     print(f"Rank {rank} processed {total_samples} samples.")
     
-    # Write Peak RSS to file for verifier
     with open(f"rss_rank_{rank}.log", "w") as f:
         f.write(str(get_peak_rss_mb()))
         

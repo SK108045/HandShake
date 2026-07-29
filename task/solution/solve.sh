@@ -1,11 +1,14 @@
 #!/bin/bash
 set -e
 
-# Copy the fixed solution files into /app and run the training
-cp /workspaces/HandShake/task/solution/train_distributed.py /workspaces/HandShake/task/environment/app/train_distributed.py
-mkdir -p /workspaces/HandShake/task/environment/app/utils
-cp /workspaces/HandShake/task/solution/utils/checkpointing.py /workspaces/HandShake/task/environment/app/utils/checkpointing.py
-touch /workspaces/HandShake/task/environment/app/utils/__init__.py
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ROOT_DIR="$(dirname "$(dirname "$DIR")")"
 
-cd /workspaces/HandShake/task/environment/app
+# Copy the fixed solution files into /app and run the training
+cp "$DIR/train_distributed.py" "$ROOT_DIR/task/environment/app/train_distributed.py"
+mkdir -p "$ROOT_DIR/task/environment/app/utils"
+cp "$DIR/utils/checkpointing.py" "$ROOT_DIR/task/environment/app/utils/checkpointing.py"
+touch "$ROOT_DIR/task/environment/app/utils/__init__.py"
+
+cd "$ROOT_DIR/task/environment/app"
 torchrun --nproc_per_node=2 train_distributed.py
