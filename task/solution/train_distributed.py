@@ -78,7 +78,6 @@ def main():
     epochs = 2
     total_samples = 0
     
-    # FIX 3 (Straggler Deadlock): Find max batches across all ranks for shadow loop
     max_batches = torch.tensor([len(dataloader)], dtype=torch.long, device=device)
     dist.all_reduce(max_batches, op=dist.ReduceOp.MAX)
     max_batches = max_batches.item()
@@ -94,7 +93,6 @@ def main():
                 inputs, targets = inputs.to(device), targets.to(device)
                 total_samples += inputs.size(0)
             except StopIteration:
-                # Shadow collective for Straggler Rank
                 is_active = False
                 inputs = torch.zeros(5, 10, device=device)
                 targets = torch.zeros(5, 2, device=device)
@@ -102,7 +100,6 @@ def main():
             is_last_batch = (step + 1) == max_batches
             is_accumulating = (step + 1) % accumulation_steps != 0 and not is_last_batch
             
-            # FIX 2 (Loss Divergence): Correct no_sync usage (forward AND backward inside context)
             if is_accumulating:
                 with model.no_sync():
                     outputs = model(inputs)

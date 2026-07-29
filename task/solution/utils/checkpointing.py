@@ -14,5 +14,4 @@ def save_checkpoint(model, optimizer, epoch, is_rank_0):
         torch.save({'model_state': state_dict}, os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch}.pt"))
         print(f"Rank 0 saved checkpoint for epoch {epoch}")
         
-    # FIX 1: Barrier must be outside the rank 0 check so all ranks hit it!
     dist.barrier()
