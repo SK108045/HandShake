@@ -1,8 +1,11 @@
 #!/bin/bash
-#
-# Your reference (Oracle) solution — it must correctly complete the task, proving the
-# task is solvable. Harbor mounts solution/ at /solution/ and runs this script.
-# Put the real logic in helpers (e.g. solution/solve.py) and call them from here, and
-# write outputs to the absolute paths named in instruction.md (e.g. /app/output.json).
+set -e
 
-# e.g.: python3 /solution/solve.py
+# Copy the fixed solution files into /app and run the training
+cp /workspaces/HandShake/task/solution/train_distributed.py /workspaces/HandShake/task/environment/app/train_distributed.py
+mkdir -p /workspaces/HandShake/task/environment/app/utils
+cp /workspaces/HandShake/task/solution/utils/checkpointing.py /workspaces/HandShake/task/environment/app/utils/checkpointing.py
+touch /workspaces/HandShake/task/environment/app/utils/__init__.py
+
+cd /workspaces/HandShake/task/environment/app
+torchrun --nproc_per_node=2 train_distributed.py
