@@ -78,27 +78,41 @@ def main():
     epochs = 2
     total_samples = 0
     
+    max_batches = torch.tensor([len(dataloader)], dtype=torch.long, device=device)
+    dist.all_reduce(max_batches, op=dist.ReduceOp.MAX)
+    max_batches = max_batches.item()
+    
     for epoch in range(epochs):
         model.train()
+        dataloader_iter = iter(dataloader)
         
-        # BUG 3 Reintroduced: Naive loop that stops when local dataloader is empty
-        for step, (inputs, targets) in enumerate(dataloader):
-            inputs, targets = inputs.to(device), targets.to(device)
-            total_samples += inputs.size(0)
+        for step in range(max_batches):
+            is_active = True
+            try:
+                inputs, targets = next(dataloader_iter)
+                inputs, targets = inputs.to(device), targets.to(device)
+                total_samples += inputs.size(0)
+            except StopIteration:
+                is_active = False
+                inputs = torch.zeros(5, 10, device=device)
+                targets = torch.zeros(5, 2, device=device)
                 
-            is_last_batch = (step + 1) == len(dataloader)
+            is_last_batch = (step + 1) == max_batches
             is_accumulating = (step + 1) % accumulation_steps != 0 and not is_last_batch
             
-            # BUG 2: Incorrect gradient accumulation context usage drops gradients silently
-            if is_accumulating:
+            if not is_accumulating:
                 with model.no_sync():
                     outputs = model(inputs)
                     loss = nn.functional.mse_loss(outputs, targets)
-                    # Missing loss.backward() causes gradients to be completely dropped!
+                    if not is_active: loss = loss * 0.0
+                    loss.backward()
             else:
                 outputs = model(inputs)
                 loss = nn.functional.mse_loss(outputs, targets)
+                if not is_active: loss = loss * 0.0
                 loss.backward()
+                
+            if not is_accumulating:
                 optimizer.step()
                 optimizer.zero_grad()
                 

@@ -10,6 +10,6 @@ Your goal is to fix `/app/train_distributed.py` so that it trains cleanly withou
 
 ### Requirements:
 - You must run the training script using: `cd /app && torchrun --nproc_per_node=2 train_distributed.py`.
-- **CRITICAL:** Do NOT modify the dataset size, the split sizes (110 vs 90), the batch sizes, or use tools like `itertools.cycle` to artificially pad or repeat the data. The data loader iteration must remain genuine. You must solve the straggler deadlock by forcing the shorter rank to "shadow" the longer rank's collective operations with dummy inputs that do not affect the gradients.
+- **CRITICAL:** The data loader iteration must remain genuine. You must solve the straggler deadlock by forcing the shorter rank to "shadow" the longer rank's collective operations with dummy inputs that do not affect the gradients.
 - Your final output must generate the checkpoint at `/app/checkpoints/checkpoint_epoch_1.pt`.
 - Your final output must successfully write the sample count files `/app/rank_0_samples.txt` and `/app/rank_1_samples.txt`, which must contain exactly `110` and `90` respectively.

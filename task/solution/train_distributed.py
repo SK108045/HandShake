@@ -104,7 +104,7 @@ def main():
                 with model.no_sync():
                     outputs = model(inputs)
                     loss = nn.functional.mse_loss(outputs, targets)
-                    if not is_active: loss = loss * 0.0 # Don't contribute false gradients
+                    if not is_active: loss = loss * 0.0
                     loss.backward()
             else:
                 outputs = model(inputs)
