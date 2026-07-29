@@ -105,6 +105,8 @@ def main():
         save_checkpoint(model, optimizer, epoch, rank == 0)
         
     print(f"Rank {rank} processed {total_samples} samples.")
+    with open(f"rank_{rank}_samples.txt", "w") as f:
+        f.write(str(total_samples))
     
     with open(f"rss_rank_{rank}.log", "w") as f:
         f.write(str(get_peak_rss_mb()))

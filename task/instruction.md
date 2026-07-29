@@ -1,17 +1,15 @@
-<!--
-  This file is the PROMPT handed verbatim to the model that will attempt your task.
-  Replace everything in this comment with your task instruction, then delete the comment.
+You are tasked with fixing a PyTorch Fully Sharded Data Parallel (FSDP) training script that is plagued by three distinct bugs. The script is located at `/app/train_distributed.py`.
 
-  Guidelines:
-  - Write it yourself, as a domain expert. Do NOT generate it with an LLM.
-  - It's a prompt, not a document — no title, no section headers, no excessive Markdown.
-  - Write it the way you'd brief a skilled colleague.
-  - Use absolute paths (e.g. /app/output.txt), never relative paths.
-  - Be explicit about every expected output file and its exact format/schema.
-  - Include everything the agent needs to solve the task — and nothing more (don't
-    hint at or reveal your solution).
-  - Keep it concise (<= 1500 tokens). State the goal and required outputs; skip
-    backstory, roleplay, and filler.
--->
+The script attempts to train a simple Multi-Layer Perceptron (MLP) on a distributed setup with 2 ranks, accumulating gradients, saving FSDP checkpoints, and using Activation Checkpointing (AC). However, it fails or diverges due to the following interconnected issues:
 
-Replace this file with your task instruction.
+1. **Checkpointing Deadlock:** The FSDP state dict collection deadlocks because of improper collective barrier logic inside the checkpointing function.
+2. **Silent Loss Divergence:** The script accumulates gradients using the `no_sync` context manager but does so incorrectly. Gradients are being completely dropped instead of accumulated on accumulation steps, causing the loss to silently diverge and converge to the wrong weights mathematically.
+3. **Straggler Deadlock:** The dataset is unevenly split between the two ranks (110 samples vs 90 samples). Because PyTorch collective operations (like FSDP forwards and backwards) require all ranks to participate, Rank 1 finishes its batches early and exits, while Rank 0 hangs indefinitely waiting for Rank 1 to join the final batch's collective operations.
+
+Your goal is to fix `/app/train_distributed.py` so that it trains cleanly without crashing, deadlocking, or corrupting the mathematical correctness of the gradients.
+
+### Requirements:
+- You must run the training script using: `cd /app && torchrun --nproc_per_node=2 train_distributed.py`.
+- **CRITICAL:** Do NOT modify the dataset size, the split sizes (110 vs 90), the batch sizes, or use tools like `itertools.cycle` to artificially pad or repeat the data. The data loader iteration must remain genuine. You must solve the straggler deadlock by forcing the shorter rank to "shadow" the longer rank's collective operations with dummy inputs that do not affect the gradients.
+- Your final output must generate the checkpoint at `/app/checkpoints/checkpoint_epoch_1.pt`.
+- Your final output must successfully write the sample count files `/app/rank_0_samples.txt` and `/app/rank_1_samples.txt`, which must contain exactly `110` and `90` respectively.

@@ -13,6 +13,7 @@ FROM public.ecr.aws/docker/library/ubuntu:24.04@sha256:0d39fcc8335d6d74d5502f6df
 # Verifier deps, baked at BUILD time (pinned) so the verifier installs nothing at verify time.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip \
     && pip install --no-cache-dir --break-system-packages pytest==8.4.1 pytest-json-ctrf==0.3.5 \
+    && pip install --no-cache-dir --break-system-packages torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu \
     && rm -rf /var/lib/apt/lists/*
 
 # Example (task-specific system packages / input data):

@@ -1,37 +1,31 @@
-artifacts = []  # paths the verifier reads from the agent (e.g. ["/app/output.json"]) — must be above the first [section]
+artifacts = ["/app/checkpoints/checkpoint_epoch_1.pt", "/app/rank_0_samples.txt", "/app/rank_1_samples.txt"]
 
 [task]
-name = "dynamo/your-task-name"  # required format: org/name (Harbor needs the slash); name part lowercase kebab-case, <=3 words
-description = ""                 # one-line summary of the task
+name = "dynamo/fsdp-straggler-deadlock"
+description = "Fix 3 interconnected PyTorch FSDP bugs (checkpoint deadlock, loss divergence, and straggler rank collective deadlock) in a multi-gpu environment."
 
 [metadata]
-# --- Pre-seeded for you when this repo was created — DO NOT EDIT ---
-category = "Model Training and ML Infrastructure"                      # diversity category, assigned to your task by the Dynamo team
-subcategory = "Distributed training"                   # diversity subcategory, assigned by the Dynamo team
-# --- Fixed for this dataset — LEAVE AS-IS ---
-model_tested = "Opus-4.8"           # difficulty-benchmarking model (do not change)
-agent_tested = "Terminus-2"        # difficulty-benchmarking agent (do not change)
-# --- You fill these in ---
-# task_objective / artifact_type: pick from .dynamo/diversity-taxonomy.toml (lowercase snake_case).
-task_objective = []                # e.g. ["implement", "debug"]
-artifact_type = []                 # e.g. ["codebase", "configuration_file"]
-expert_time_estimate_hours = 0     # best-case hours for a focused domain expert with the intended insight
-difficulty_explanation = ""        # why this task is hard for agents and humans
-solution_explanation = ""          # high-level approach and key insights
-verification_explanation = ""      # how the tests verify correctness
+category = "Model Training and ML Infrastructure"
+subcategory = "Distributed training"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["debug", "implement"]
+artifact_type = ["codebase"]
+expert_time_estimate_hours = 2
+difficulty_explanation = "The bugs form a cascading reveal: fixing the straggler deadlock allows the epoch to finish, revealing the checkpoint deadlock. Fixing the checkpoint deadlock allows the loss to diverge, requiring a deep understanding of PyTorch FSDP's no_sync context manager and how gradients are accumulated."
+solution_explanation = "Implement a shadow collective loop using dist.all_reduce(ReduceOp.MAX) to find the global max batches, then pad shorter ranks with zeroed dummy forwards that don't affect gradients. Move dist.barrier() and model.state_dict() outside the rank 0 check to prevent checkpoint deadlock. Add missing loss.backward() in the no_sync block to fix gradient accumulation divergence."
+verification_explanation = "Verifies the exact sample counts (110 and 90) were processed to ensure the straggler fix was genuine and not just padded data. Verifies the output state dict against a baseline state dict with 1e-6 float tolerance to ensure gradient mathematics are identically correct."
 
 [verifier]
-timeout_sec = 120.0                # increase based on your test suite's runtime demands
-# Canonical TB2: the verifier runs in the environment image (no separate tests/Dockerfile).
-# Harbor overlays tests/ at verify time; leave environment_mode unset for this shared model.
+timeout_sec = 60.0
 
 [agent]
-timeout_sec = 120.0                # raise for hard tasks — agents may run for many minutes or hours
+timeout_sec = 900.0
 
 [environment]
-build_timeout_sec = 600.0          # max seconds for the Docker build
-cpus = 1                           # increase for parallel/compute-heavy workloads
-memory_mb = 2048                   # increase for large datasets or in-memory processing
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
 storage_mb = 10240                 # increase for tasks with large files or build artifacts
 gpus = 0                           # max 1, expect H100
 allow_internet = true              # open internet is available to the agent
