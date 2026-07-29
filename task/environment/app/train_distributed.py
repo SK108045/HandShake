@@ -94,11 +94,12 @@ def main():
             inputs, targets = inputs.to(device), targets.to(device)
             total_samples += inputs.size(0)
             
-            is_accumulating = (step + 1) % accumulation_steps != 0
-            
             # BUG 2: Incorrect no_sync usage combined with activation checkpointing & accumulation.
             # In FSDP, combining no_sync with activation checkpointing can cause accumulated
-            # gradients to be dropped/overwritten. 
+            # gradients to be dropped/overwritten.
+            is_last_batch = (step + 1) == len(dataloader)
+            is_accumulating = (step + 1) % accumulation_steps != 0 and not is_last_batch
+            
             if is_accumulating:
                 with model.no_sync():
                     outputs = model(inputs)
@@ -111,11 +112,6 @@ def main():
                 optimizer.step()
                 optimizer.zero_grad()
                 
-        # Handle remaining gradients (if dataset length not divisible by accumulation_steps)
-        if (step + 1) % accumulation_steps != 0:
-            optimizer.step()
-            optimizer.zero_grad()
-        
         # Save checkpoint (BUG 1: Deadlock inside here)
         save_checkpoint(model, optimizer, epoch, rank == 0)
         
